@@ -149,26 +149,107 @@ PROMPT_EOF
         echo "🔍 Gathering Terraform files for analysis..."
         find "$WORKSPACE_DIR" -name "*.tf" -o -name "*.tfvars" > "$OUTPUT_DIR/terraform-files.txt"
 
-        # Run Claude analysis with file context
-        (
-            echo "Analyzing Terraform infrastructure with the following files:"
-            echo ""
-            cat "$OUTPUT_DIR/terraform-files.txt"
-            echo ""
-            echo "=== FILE CONTENTS ==="
-            while IFS= read -r file; do
-                if [ -f "$file" ] && [ -r "$file" ]; then
-                    echo ""
-                    echo "### File: $file"
-                    echo '```hcl'
-                    cat "$file"
-                    echo '```'
-                fi
-            done < "$OUTPUT_DIR/terraform-files.txt"
-            echo ""
-            echo "=== ANALYSIS REQUEST ==="
-            cat "$OUTPUT_DIR/claude-prompt.txt"
-        ) | claude > "$OUTPUT_DIR/claude-analysis.txt" 2>&1 || handle_error $? "Claude Analysis"
+        # Create a focused analysis prompt with key files
+        echo "🔍 Creating focused analysis for key files..."
+
+        # Create a more targeted prompt that fits within token limits
+        cat > "$OUTPUT_DIR/claude-analysis-prompt.txt" << 'ANALYSIS_EOF'
+You are a Terraform security and best practices expert. Analyze the provided Terraform infrastructure code using this comprehensive framework:
+
+## ANALYSIS FRAMEWORK
+
+### 1. CRITICAL SECURITY ISSUES (Priority: Critical)
+- Hardcoded secrets, passwords, API keys
+- Public endpoints without proper access controls
+- Missing encryption configurations
+- Overly permissive network security rules
+
+### 2. HIGH PRIORITY ISSUES (Priority: High)
+- Missing network security groups/rules
+- Improper resource access controls
+- Backup and disaster recovery gaps
+- Compliance violations (CIS benchmarks)
+
+### 3. MEDIUM PRIORITY ISSUES (Priority: Medium)
+- Resource naming inconsistencies
+- Missing or insufficient tagging
+- Cost optimization opportunities
+- Operational excellence gaps
+
+### 4. CODE QUALITY ISSUES (Priority: Low)
+- Formatting and structure improvements
+- Documentation gaps
+- Unused variables or resources
+
+## ANALYSIS REQUIREMENTS
+For each issue found:
+1. Specify exact file and line number
+2. Explain the security/operational risk
+3. Provide specific remediation steps
+4. Classify priority level (Critical/High/Medium/Low)
+
+## OUTPUT FORMAT
+Structure your response exactly like this:
+
+# Terraform Infrastructure Analysis Report
+
+## Executive Summary
+[Brief overview of findings with priority counts]
+
+## Critical Issues (🚨 IMMEDIATE ACTION REQUIRED)
+### Issue 1: [Title]
+- **File**: [filename:line]
+- **Risk**: [Specific risk description]
+- **Fix**: [Exact remediation steps]
+
+## High Priority Issues (⚠️ ADDRESS SOON)
+### Issue N: [Title]
+- **File**: [filename:line]
+- **Risk**: [Risk description]
+- **Fix**: [Remediation steps]
+
+## Medium Priority Issues (⚡ PLAN TO FIX)
+[Continue same format...]
+
+## Recommendations Summary
+1. Critical: [count] issues - Fix immediately
+2. High: [count] issues - Address in next sprint
+3. Medium: [count] issues - Plan for improvement
+
+Now analyze these Terraform files:
+ANALYSIS_EOF
+
+        # Add the main files with critical content
+        echo "" >> "$OUTPUT_DIR/claude-analysis-prompt.txt"
+        echo "=== TERRAFORM FILES TO ANALYZE ===" >> "$OUTPUT_DIR/claude-analysis-prompt.txt"
+
+        # Focus on main files that typically contain security issues
+        CRITICAL_FILES=("main.tf" "variables.tf" "outputs.tf")
+        for file in "${CRITICAL_FILES[@]}"; do
+            if [ -f "$WORKSPACE_DIR/$file" ]; then
+                echo "" >> "$OUTPUT_DIR/claude-analysis-prompt.txt"
+                echo "## File: $file" >> "$OUTPUT_DIR/claude-analysis-prompt.txt"
+                echo '```hcl' >> "$OUTPUT_DIR/claude-analysis-prompt.txt"
+                cat "$WORKSPACE_DIR/$file" >> "$OUTPUT_DIR/claude-analysis-prompt.txt"
+                echo '```' >> "$OUTPUT_DIR/claude-analysis-prompt.txt"
+            fi
+        done
+
+        # Add key module files that often have security issues
+        MODULE_DIRS=("modules/sql_server" "modules/key_vault" "modules/storage_account")
+        for module_dir in "${MODULE_DIRS[@]}"; do
+            if [ -d "$WORKSPACE_DIR/$module_dir" ] && [ -f "$WORKSPACE_DIR/$module_dir/main.tf" ]; then
+                echo "" >> "$OUTPUT_DIR/claude-analysis-prompt.txt"
+                echo "## File: $module_dir/main.tf" >> "$OUTPUT_DIR/claude-analysis-prompt.txt"
+                echo '```hcl' >> "$OUTPUT_DIR/claude-analysis-prompt.txt"
+                head -50 "$WORKSPACE_DIR/$module_dir/main.tf" >> "$OUTPUT_DIR/claude-analysis-prompt.txt"
+                echo '```' >> "$OUTPUT_DIR/claude-analysis-prompt.txt"
+            fi
+        done
+
+        # Run focused Claude analysis
+        echo "🤖 Running focused Claude analysis..."
+        cat "$OUTPUT_DIR/claude-analysis-prompt.txt" | claude > "$OUTPUT_DIR/claude-analysis.txt" 2>&1 || handle_error $? "Claude Analysis"
 
         if [ -f "$OUTPUT_DIR/claude-analysis.txt" ] && [ -s "$OUTPUT_DIR/claude-analysis.txt" ]; then
             echo "### AI-Powered Recommendations" >> "$OUTPUT_DIR/analysis-report.md"
