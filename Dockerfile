@@ -36,15 +36,27 @@ RUN curl -L "$(curl -s https://api.github.com/repos/tenable/terrascan/releases/l
 # Install Infracost (optional - for cost analysis)
 RUN curl -fsSL https://raw.githubusercontent.com/infracost/infracost/master/scripts/install.sh | sh
 
+# Install Claude CLI
+RUN curl -fsSL https://claude.ai/install.sh | sh || \
+    (curl -L -o claude-cli.tar.gz "https://github.com/anthropics/claude-cli/releases/latest/download/claude-cli-linux-amd64.tar.gz" && \
+     tar -xzf claude-cli.tar.gz && \
+     mv claude /usr/local/bin/ && \
+     rm claude-cli.tar.gz)
+
 # Create analysis script directory
 WORKDIR /terraform-validator
 
-# Copy analysis scripts
+# Copy analysis scripts and instructions
 COPY scripts/ ./scripts/
 COPY templates/ ./templates/
+COPY claude/ ./claude/
 
 # Make scripts executable
 RUN chmod +x scripts/*.sh
+
+# Set environment variables for API keys (to be provided at runtime)
+ENV ANTHROPIC_API_KEY=""
+ENV INFRACOST_API_KEY=""
 
 # Set entrypoint
 ENTRYPOINT ["./scripts/analyze.sh"]

@@ -30,6 +30,8 @@ docker pull ghcr.io/YOUR_USERNAME/terraform-security-analyzer:latest
 docker run --rm \
   -v "$(pwd):/workspace:ro" \
   -v "$(pwd)/output:/output" \
+  -e ANTHROPIC_API_KEY="your_claude_api_key" \
+  -e INFRACOST_API_KEY="your_infracost_api_key" \
   ghcr.io/YOUR_USERNAME/terraform-security-analyzer:latest
 ```
 
@@ -75,10 +77,15 @@ docker run --rm \
 ### Environment Variables
 
 ```bash
+# Analysis configuration
 ANALYSIS_TYPE=full              # full, security-only, best-practices-only
 SKIP_ERRORS=true               # Continue on tool failures
 WORKSPACE_DIR=/workspace       # Input directory
 OUTPUT_DIR=/output            # Output directory
+
+# API Keys (required for enhanced analysis)
+ANTHROPIC_API_KEY=your_key     # For Claude AI analysis
+INFRACOST_API_KEY=your_key     # For cost estimation
 ```
 
 ## 📁 Repository Structure

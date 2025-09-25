@@ -1,4 +1,4 @@
-name: Build and Publish Terraform Analyzer
+name: Build and Publish Terraform Best Practices Analyzer
 
 on:
   push:
@@ -26,7 +26,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: terraform-security-analyzer
+  IMAGE_NAME: terraform-best-practices-analyzer
 
 jobs:
   build-and-publish:
@@ -63,8 +63,8 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
           labels: |
-            org.opencontainers.image.title=Terraform Security Analyzer
-            org.opencontainers.image.description=Comprehensive Docker-based Terraform security and best practices analyzer
+            org.opencontainers.image.title=Terraform Best Practices Analyzer
+            org.opencontainers.image.description=AI-powered Terraform best practices and cost optimization analyzer using Claude Code and Infracost
             org.opencontainers.image.vendor=${{ github.repository_owner }}
 
       - name: Build and push Docker image
@@ -81,46 +81,6 @@ jobs:
           provenance: true
           sbom: true
 
-      - name: Test Docker image
-        if: github.event_name != 'pull_request'
-        run: |
-          # Create test Terraform files
-          mkdir -p test-terraform
-          cat > test-terraform/main.tf << 'EOF'
-          resource "aws_s3_bucket" "example" {
-            bucket = "my-test-bucket-${random_string.suffix.result}"
-          }
-
-          resource "random_string" "suffix" {
-            length = 8
-          }
-          EOF
-
-          cat > test-terraform/variables.tf << 'EOF'
-          variable "environment" {
-            description = "Environment name"
-            type        = string
-            default     = "test"
-          }
-          EOF
-
-          # Test the published image
-          docker run --rm \
-            -v "$PWD/test-terraform:/workspace:ro" \
-            -v "$PWD/test-output:/output" \
-            -e ANALYSIS_TYPE=security-only \
-            -e SKIP_ERRORS=true \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest || echo "Analysis completed"
-
-          # Check if analysis produced output
-          if [ -f "test-output/analysis-report.md" ]; then
-            echo "✅ Docker image test successful"
-            echo "Report preview:"
-            head -20 test-output/analysis-report.md
-          else
-            echo "❌ Docker image test failed - no report generated"
-            exit 1
-          fi
 
       - name: Generate artifact attestation
         if: github.event_name != 'pull_request'
@@ -139,7 +99,7 @@ jobs:
           tag_name: ${{ github.event.inputs.tag }}
           release_name: Terraform Analyzer ${{ github.event.inputs.tag }}
           body: |
-            ## Terraform Security Analyzer ${{ github.event.inputs.tag }}
+            ## Terraform Best Practices Analyzer ${{ github.event.inputs.tag }}
 
             Docker image published to: `${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.tag }}`
 
@@ -149,12 +109,13 @@ jobs:
             ```
 
             ### What's included:
-            - Terraform validation and formatting
-            - Checkov security scanning
-            - TFSec security analysis
-            - TFLint best practices
-            - Terrascan multi-cloud scanning
+            - **Claude Code AI Analysis**: Comprehensive best practices review
+            - **Infracost**: Cost estimation and optimization recommendations
+            - **Terraform**: Validation and formatting
+            - **TFLint**: Code quality and best practices
 
-            See [README-terraform-analyzer.md](README-terraform-analyzer.md) for full documentation.
+            **Requires API Keys**: Set `ANTHROPIC_API_KEY` and `INFRACOST_API_KEY` environment variables.
+
+            See [README.md](README.md) for full documentation.
           draft: false
           prerelease: false
