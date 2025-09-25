@@ -39,7 +39,8 @@ RUN curl -L "$(curl -s https://api.github.com/repos/tenable/terrascan/releases/l
 RUN curl -fsSL https://raw.githubusercontent.com/infracost/infracost/master/scripts/install.sh | sh
 
 # Install Claude CLI (mandatory)
-RUN npm install -g @anthropic-ai/claude-code && \
+RUN curl -fsSL https://claude.ai/install.sh | bash && \
+    export PATH="/root/.local/bin:$PATH" && \
     claude --version
 
 # Create analysis script directory
@@ -52,6 +53,9 @@ COPY claude/ ./claude/
 
 # Make scripts executable
 RUN chmod +x scripts/*.sh
+
+# Add Claude CLI to PATH
+ENV PATH="/root/.local/bin:$PATH"
 
 # API keys will be provided at runtime via -e flags
 # No ENV declarations needed to avoid security warnings
