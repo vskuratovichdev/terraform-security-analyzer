@@ -100,24 +100,75 @@ if [ "$ANALYSIS_TYPE" = "practices-only" ] || [ "$ANALYSIS_TYPE" = "full" ]; the
     echo "" >> "$OUTPUT_DIR/analysis-report.md"
 
     if [ -n "$ANTHROPIC_API_KEY" ]; then
-        # Create a prompt for Claude analysis
+        # Check if instruction file exists
+        INSTRUCTION_FILE="/terraform-validator/claude/terraform-analysis-instruction.md"
+        if [ ! -f "$INSTRUCTION_FILE" ]; then
+            echo "⚠️ Instruction file not found at $INSTRUCTION_FILE" >> "$OUTPUT_DIR/analysis-report.md"
+            INSTRUCTION_FILE=""
+        fi
+
+        # Create comprehensive prompt that includes the instruction content
         cat > "$OUTPUT_DIR/claude-prompt.txt" << 'PROMPT_EOF'
-Please analyze this Terraform code for best practices, security, and cost optimization opportunities.
+Please analyze the Terraform code in the current directory for best practices, security, and cost optimization opportunities.
 
-Use the comprehensive analysis framework from the instruction file in ./claude/terraform-analysis-instruction.md
+IMPORTANT: Use the comprehensive analysis framework provided below. This is your detailed instruction guide:
 
-Focus on:
-1. Code structure and organization
-2. Security best practices
-3. Cost optimization opportunities
-4. Operational excellence
-5. Compliance and governance
-
-Provide specific, actionable recommendations with priorities (Critical, High, Medium, Low).
 PROMPT_EOF
 
-        # Run Claude analysis - simple approach using echo/pipe
-        echo "$(cat $OUTPUT_DIR/claude-prompt.txt)" | claude > "$OUTPUT_DIR/claude-analysis.txt" 2>&1 || handle_error $? "Claude Analysis"
+        # Append the instruction file content to the prompt
+        if [ -n "$INSTRUCTION_FILE" ] && [ -f "$INSTRUCTION_FILE" ]; then
+            echo "" >> "$OUTPUT_DIR/claude-prompt.txt"
+            echo "=== ANALYSIS INSTRUCTION FRAMEWORK ===" >> "$OUTPUT_DIR/claude-prompt.txt"
+            cat "$INSTRUCTION_FILE" >> "$OUTPUT_DIR/claude-prompt.txt"
+            echo "" >> "$OUTPUT_DIR/claude-prompt.txt"
+            echo "=== END OF INSTRUCTION FRAMEWORK ===" >> "$OUTPUT_DIR/claude-prompt.txt"
+        fi
+
+        # Add specific analysis request
+        cat >> "$OUTPUT_DIR/claude-prompt.txt" << 'PROMPT_EOF'
+
+Now analyze the Terraform files in the workspace using the above framework. Focus specifically on:
+
+1. **Security Analysis** - Check for hardcoded secrets, network security, access controls
+2. **Code Structure & Organization** - Evaluate modular design, naming conventions, documentation
+3. **Best Practices Compliance** - Resource tagging, provider versions, state management
+4. **Operational Excellence** - Monitoring, logging, backup strategies
+5. **Performance & Reliability** - Dependencies, error handling, high availability
+6. **Compliance & Governance** - Policy adherence, audit trails
+
+For each finding:
+- Classify as Critical/High/Medium/Low priority
+- Provide specific file and line references where possible
+- Give actionable remediation steps
+- Reference relevant best practice standards
+
+Structure your response with clear sections for each category and provide an executive summary with priority recommendations.
+PROMPT_EOF
+
+        # Create the analysis command with all Terraform files as context
+        echo "🔍 Gathering Terraform files for analysis..."
+        find "$WORKSPACE_DIR" -name "*.tf" -o -name "*.tfvars" > "$OUTPUT_DIR/terraform-files.txt"
+
+        # Run Claude analysis with file context
+        (
+            echo "Analyzing Terraform infrastructure with the following files:"
+            echo ""
+            cat "$OUTPUT_DIR/terraform-files.txt"
+            echo ""
+            echo "=== FILE CONTENTS ==="
+            while IFS= read -r file; do
+                if [ -f "$file" ] && [ -r "$file" ]; then
+                    echo ""
+                    echo "### File: $file"
+                    echo '```hcl'
+                    cat "$file"
+                    echo '```'
+                fi
+            done < "$OUTPUT_DIR/terraform-files.txt"
+            echo ""
+            echo "=== ANALYSIS REQUEST ==="
+            cat "$OUTPUT_DIR/claude-prompt.txt"
+        ) | claude > "$OUTPUT_DIR/claude-analysis.txt" 2>&1 || handle_error $? "Claude Analysis"
 
         if [ -f "$OUTPUT_DIR/claude-analysis.txt" ] && [ -s "$OUTPUT_DIR/claude-analysis.txt" ]; then
             echo "### AI-Powered Recommendations" >> "$OUTPUT_DIR/analysis-report.md"
