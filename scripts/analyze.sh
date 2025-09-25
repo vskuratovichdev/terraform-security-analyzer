@@ -116,8 +116,8 @@ Focus on:
 Provide specific, actionable recommendations with priorities (Critical, High, Medium, Low).
 PROMPT_EOF
 
-        # Run Claude analysis with the project files and instruction
-        claude analyze "$(cat $OUTPUT_DIR/claude-prompt.txt)" --files "$(find . -name '*.tf' -o -name '*.tfvars' | head -20 | tr '\n' ' ')" --files "./claude/terraform-analysis-instruction.md" > "$OUTPUT_DIR/claude-analysis.txt" 2>&1 || handle_error $? "Claude Analysis"
+        # Run Claude analysis - simple approach using echo/pipe
+        echo "$(cat $OUTPUT_DIR/claude-prompt.txt)" | claude > "$OUTPUT_DIR/claude-analysis.txt" 2>&1 || handle_error $? "Claude Analysis"
 
         if [ -f "$OUTPUT_DIR/claude-analysis.txt" ] && [ -s "$OUTPUT_DIR/claude-analysis.txt" ]; then
             echo "### AI-Powered Recommendations" >> "$OUTPUT_DIR/analysis-report.md"
@@ -179,7 +179,53 @@ if [ "$ANALYSIS_TYPE" = "cost-only" ] || [ "$ANALYSIS_TYPE" = "full" ]; then
     echo "" >> "$OUTPUT_DIR/analysis-report.md"
 fi
 
-# 4. TFLint Analysis
+# 4. Basic Security Scanning for Secrets
+echo "🔍 Running basic security scan for secrets..."
+echo "## 🔍 Security Scan" >> "$OUTPUT_DIR/analysis-report.md"
+echo "" >> "$OUTPUT_DIR/analysis-report.md"
+
+# Simple secret detection patterns
+SECRET_PATTERNS=(
+    'password\s*=\s*"[^"]*"'
+    'secret\s*=\s*"[^"]*"'
+    'key\s*=\s*"[^"]*"'
+    'token\s*=\s*"[^"]*"'
+    'api_key\s*=\s*"[^"]*"'
+    'access_key\s*=\s*"[^"]*"'
+    'private_key\s*=\s*"[^"]*"'
+)
+
+SECRETS_FOUND=0
+for pattern in "${SECRET_PATTERNS[@]}"; do
+    if grep -r -i -E "$pattern" . --include="*.tf" --include="*.tfvars" > /dev/null 2>&1; then
+        SECRETS_FOUND=$((SECRETS_FOUND + 1))
+    fi
+done
+
+if [ $SECRETS_FOUND -gt 0 ]; then
+    echo "### ⚠️ Potential Secrets Detected" >> "$OUTPUT_DIR/analysis-report.md"
+    echo "Found $SECRETS_FOUND potential hardcoded secrets in Terraform files:" >> "$OUTPUT_DIR/analysis-report.md"
+    echo '```' >> "$OUTPUT_DIR/analysis-report.md"
+
+    for pattern in "${SECRET_PATTERNS[@]}"; do
+        grep -r -i -E "$pattern" . --include="*.tf" --include="*.tfvars" | head -5 >> "$OUTPUT_DIR/analysis-report.md" 2>/dev/null || true
+    done
+
+    echo '```' >> "$OUTPUT_DIR/analysis-report.md"
+    echo "" >> "$OUTPUT_DIR/analysis-report.md"
+    echo "**Recommendations:**" >> "$OUTPUT_DIR/analysis-report.md"
+    echo "- Use Terraform variables or data sources instead of hardcoded values" >> "$OUTPUT_DIR/analysis-report.md"
+    echo "- Store secrets in Azure Key Vault or AWS Secrets Manager" >> "$OUTPUT_DIR/analysis-report.md"
+    echo "- Use environment variables for sensitive data" >> "$OUTPUT_DIR/analysis-report.md"
+
+    CRITICAL_ISSUES=$((CRITICAL_ISSUES + SECRETS_FOUND))
+else
+    echo "### ✅ No Hardcoded Secrets Found" >> "$OUTPUT_DIR/analysis-report.md"
+    echo "No obvious hardcoded secrets detected in Terraform files." >> "$OUTPUT_DIR/analysis-report.md"
+fi
+echo "" >> "$OUTPUT_DIR/analysis-report.md"
+
+# 5. TFLint Analysis
 if [ "$ANALYSIS_TYPE" = "best-practices-only" ] || [ "$ANALYSIS_TYPE" = "full" ]; then
     echo "📋 Running TFLint best practices check..."
     echo "## 📋 TFLint Best Practices Analysis" >> "$OUTPUT_DIR/analysis-report.md"
