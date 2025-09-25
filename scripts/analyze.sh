@@ -100,12 +100,28 @@ if [ "$ANALYSIS_TYPE" = "practices-only" ] || [ "$ANALYSIS_TYPE" = "full" ]; the
     echo "" >> "$OUTPUT_DIR/analysis-report.md"
 
     if [ -n "$ANTHROPIC_API_KEY" ]; then
-        # Run Claude analysis using the instruction file
-        claude analyze-terraform . --instruction-file ./claude/terraform-analysis-instruction.md > "$OUTPUT_DIR/claude-analysis.txt" 2>&1 || handle_error $? "Claude Analysis"
+        # Create a prompt for Claude analysis
+        cat > "$OUTPUT_DIR/claude-prompt.txt" << 'PROMPT_EOF'
+Please analyze this Terraform code for best practices, security, and cost optimization opportunities.
 
-        if [ -f "$OUTPUT_DIR/claude-analysis.txt" ]; then
+Use the comprehensive analysis framework from the instruction file in ./claude/terraform-analysis-instruction.md
+
+Focus on:
+1. Code structure and organization
+2. Security best practices
+3. Cost optimization opportunities
+4. Operational excellence
+5. Compliance and governance
+
+Provide specific, actionable recommendations with priorities (Critical, High, Medium, Low).
+PROMPT_EOF
+
+        # Run Claude analysis with the project files and instruction
+        claude analyze "$(cat $OUTPUT_DIR/claude-prompt.txt)" --files "$(find . -name '*.tf' -o -name '*.tfvars' | head -20 | tr '\n' ' ')" --files "./claude/terraform-analysis-instruction.md" > "$OUTPUT_DIR/claude-analysis.txt" 2>&1 || handle_error $? "Claude Analysis"
+
+        if [ -f "$OUTPUT_DIR/claude-analysis.txt" ] && [ -s "$OUTPUT_DIR/claude-analysis.txt" ]; then
             echo "### AI-Powered Recommendations" >> "$OUTPUT_DIR/analysis-report.md"
-            echo '```' >> "$OUTPUT_DIR/analysis-report.md"
+            echo '```markdown' >> "$OUTPUT_DIR/analysis-report.md"
             cat "$OUTPUT_DIR/claude-analysis.txt" >> "$OUTPUT_DIR/analysis-report.md"
             echo '```' >> "$OUTPUT_DIR/analysis-report.md"
 
@@ -115,6 +131,8 @@ if [ "$ANALYSIS_TYPE" = "practices-only" ] || [ "$ANALYSIS_TYPE" = "full" ]; the
 
             CRITICAL_ISSUES=$((CRITICAL_ISSUES + CLAUDE_CRITICAL))
             HIGH_ISSUES=$((HIGH_ISSUES + CLAUDE_HIGH))
+        else
+            echo "⚠️ Claude analysis produced no output - check API key and connectivity" >> "$OUTPUT_DIR/analysis-report.md"
         fi
     else
         echo "⚠️ ANTHROPIC_API_KEY not provided - skipping Claude AI analysis" >> "$OUTPUT_DIR/analysis-report.md"
