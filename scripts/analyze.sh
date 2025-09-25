@@ -7,7 +7,7 @@ OUTPUT_DIR="/output"
 ANALYSIS_TYPE="${ANALYSIS_TYPE:-full}"
 SKIP_ERRORS="${SKIP_ERRORS:-true}"
 
-echo "🏗️ Terraform Security & Best Practices Analyzer"
+echo "🏗️ Terraform Best Practices & Cost Analyzer"
 echo "================================================"
 echo "Analysis Type: $ANALYSIS_TYPE"
 echo "Skip Errors: $SKIP_ERRORS"
@@ -47,18 +47,17 @@ echo ""
 
 # Start report
 cat > "$OUTPUT_DIR/analysis-report.md" << 'EOF'
-# 🏗️ Terraform Infrastructure Analysis Report
+# 🏗️ Terraform Best Practices & Cost Analysis Report
 
 ## 📊 Executive Summary
 
-This report presents the results of automated security and best practices analysis performed on your Terraform infrastructure code.
+This report presents the results of AI-powered best practices and cost analysis performed on your Terraform infrastructure code.
 
 ### 🔧 Analysis Tools Used
 - **Terraform**: Native validation and formatting
-- **Checkov**: Security and compliance scanning
-- **TFSec**: Security-focused static analysis
-- **TFLint**: Terraform best practices validation
-- **Terrascan**: Multi-cloud security scanning
+- **Claude AI**: AI-powered best practices analysis using comprehensive Terraform guidelines
+- **Infracost**: Cloud cost estimation and optimization recommendations
+- **TFLint**: Terraform code quality and best practices validation
 
 ---
 
@@ -94,66 +93,70 @@ fi
 echo '```' >> "$OUTPUT_DIR/analysis-report.md"
 echo "" >> "$OUTPUT_DIR/analysis-report.md"
 
-# 2. Security Analysis with Checkov
-if [ "$ANALYSIS_TYPE" = "security-only" ] || [ "$ANALYSIS_TYPE" = "full" ]; then
-    echo "🔒 Running Checkov security scan..."
-    echo "## 🔒 Checkov Security Analysis" >> "$OUTPUT_DIR/analysis-report.md"
+# 2. Claude AI Best Practices Analysis
+if [ "$ANALYSIS_TYPE" = "practices-only" ] || [ "$ANALYSIS_TYPE" = "full" ]; then
+    echo "🤖 Running Claude AI best practices analysis..."
+    echo "## 🤖 Claude AI Best Practices Analysis" >> "$OUTPUT_DIR/analysis-report.md"
     echo "" >> "$OUTPUT_DIR/analysis-report.md"
 
-    checkov -d . --output cli --quiet > "$OUTPUT_DIR/checkov-output.txt" 2>&1 || handle_error $? "Checkov"
-    checkov -d . --output sarif --output-file-path "$OUTPUT_DIR" --quiet > /dev/null 2>&1 || handle_error $? "Checkov SARIF"
+    if [ -n "$ANTHROPIC_API_KEY" ]; then
+        # Run Claude analysis using the instruction file
+        claude analyze-terraform . --instruction-file ./claude/terraform-analysis-instruction.md > "$OUTPUT_DIR/claude-analysis.txt" 2>&1 || handle_error $? "Claude Analysis"
 
-    # Parse Checkov results
-    if [ -f "$OUTPUT_DIR/checkov-output.txt" ]; then
-        CHECKOV_PASSED=$(grep -c "PASSED" "$OUTPUT_DIR/checkov-output.txt" || echo "0")
-        CHECKOV_FAILED=$(grep -c "FAILED" "$OUTPUT_DIR/checkov-output.txt" || echo "0")
-        CHECKOV_SKIPPED=$(grep -c "SKIPPED" "$OUTPUT_DIR/checkov-output.txt" || echo "0")
+        if [ -f "$OUTPUT_DIR/claude-analysis.txt" ]; then
+            echo "### AI-Powered Recommendations" >> "$OUTPUT_DIR/analysis-report.md"
+            echo '```' >> "$OUTPUT_DIR/analysis-report.md"
+            cat "$OUTPUT_DIR/claude-analysis.txt" >> "$OUTPUT_DIR/analysis-report.md"
+            echo '```' >> "$OUTPUT_DIR/analysis-report.md"
 
-        echo "### Summary" >> "$OUTPUT_DIR/analysis-report.md"
-        echo "- ✅ **Passed**: $CHECKOV_PASSED checks" >> "$OUTPUT_DIR/analysis-report.md"
-        echo "- ❌ **Failed**: $CHECKOV_FAILED checks" >> "$OUTPUT_DIR/analysis-report.md"
-        echo "- ⏭️ **Skipped**: $CHECKOV_SKIPPED checks" >> "$OUTPUT_DIR/analysis-report.md"
-        echo "" >> "$OUTPUT_DIR/analysis-report.md"
+            # Count issues from Claude analysis (simple heuristic)
+            CLAUDE_CRITICAL=$(grep -ci "critical\|severe\|urgent" "$OUTPUT_DIR/claude-analysis.txt" 2>/dev/null || echo "0")
+            CLAUDE_HIGH=$(grep -ci "important\|should fix\|recommended" "$OUTPUT_DIR/claude-analysis.txt" 2>/dev/null || echo "0")
 
-        # Count critical/high issues from Checkov
-        CRITICAL_ISSUES=$((CRITICAL_ISSUES + $(grep -c "CRITICAL" "$OUTPUT_DIR/checkov-output.txt" || echo "0")))
-        HIGH_ISSUES=$((HIGH_ISSUES + $(grep -c "HIGH" "$OUTPUT_DIR/checkov-output.txt" || echo "0")))
-        MEDIUM_ISSUES=$((MEDIUM_ISSUES + $(grep -c "MEDIUM" "$OUTPUT_DIR/checkov-output.txt" || echo "0")))
-        LOW_ISSUES=$((LOW_ISSUES + $(grep -c "LOW" "$OUTPUT_DIR/checkov-output.txt" || echo "0")))
-
-        echo "### Failed Checks" >> "$OUTPUT_DIR/analysis-report.md"
-        echo '```' >> "$OUTPUT_DIR/analysis-report.md"
-        grep -A 2 -B 1 "FAILED" "$OUTPUT_DIR/checkov-output.txt" | head -50 >> "$OUTPUT_DIR/analysis-report.md" || echo "No failed checks found" >> "$OUTPUT_DIR/analysis-report.md"
-        echo '```' >> "$OUTPUT_DIR/analysis-report.md"
+            CRITICAL_ISSUES=$((CRITICAL_ISSUES + CLAUDE_CRITICAL))
+            HIGH_ISSUES=$((HIGH_ISSUES + CLAUDE_HIGH))
+        fi
+    else
+        echo "⚠️ ANTHROPIC_API_KEY not provided - skipping Claude AI analysis" >> "$OUTPUT_DIR/analysis-report.md"
+        echo "Set ANTHROPIC_API_KEY environment variable to enable AI-powered analysis" >> "$OUTPUT_DIR/analysis-report.md"
     fi
     echo "" >> "$OUTPUT_DIR/analysis-report.md"
 fi
 
-# 3. TFSec Analysis
-if [ "$ANALYSIS_TYPE" = "security-only" ] || [ "$ANALYSIS_TYPE" = "full" ]; then
-    echo "🛡️ Running TFSec security scan..."
-    echo "## 🛡️ TFSec Security Analysis" >> "$OUTPUT_DIR/analysis-report.md"
+# 3. Infracost Analysis
+if [ "$ANALYSIS_TYPE" = "cost-only" ] || [ "$ANALYSIS_TYPE" = "full" ]; then
+    echo "💰 Running Infracost analysis..."
+    echo "## 💰 Infracost Cost Analysis" >> "$OUTPUT_DIR/analysis-report.md"
     echo "" >> "$OUTPUT_DIR/analysis-report.md"
 
-    tfsec . --format json > "$OUTPUT_DIR/tfsec-results.json" 2>/dev/null || handle_error $? "TFSec"
-    tfsec . --format sarif --out "$OUTPUT_DIR/tfsec-results.sarif" > /dev/null 2>&1 || handle_error $? "TFSec SARIF"
+    if [ -n "$INFRACOST_API_KEY" ]; then
+        # Initialize infracost and run analysis
+        infracost configure set api_key "$INFRACOST_API_KEY" > /dev/null 2>&1 || true
+        infracost breakdown --path . --format json > "$OUTPUT_DIR/infracost-results.json" 2>/dev/null || handle_error $? "Infracost"
 
-    if [ -f "$OUTPUT_DIR/tfsec-results.json" ]; then
-        TFSEC_ISSUES=$(jq '.results | length' "$OUTPUT_DIR/tfsec-results.json" 2>/dev/null || echo "0")
-        echo "### Summary" >> "$OUTPUT_DIR/analysis-report.md"
-        echo "- **Total Issues Found**: $TFSEC_ISSUES" >> "$OUTPUT_DIR/analysis-report.md"
-        echo "" >> "$OUTPUT_DIR/analysis-report.md"
+        if [ -f "$OUTPUT_DIR/infracost-results.json" ]; then
+            # Extract cost information
+            MONTHLY_COST=$(jq -r '.totalMonthlyCost // "0"' "$OUTPUT_DIR/infracost-results.json" 2>/dev/null || echo "0")
 
-        if [ "$TFSEC_ISSUES" -gt 0 ]; then
-            echo "### Issues Found" >> "$OUTPUT_DIR/analysis-report.md"
+            echo "### Cost Summary" >> "$OUTPUT_DIR/analysis-report.md"
+            echo "- **Estimated Monthly Cost**: \$${MONTHLY_COST}" >> "$OUTPUT_DIR/analysis-report.md"
+            echo "" >> "$OUTPUT_DIR/analysis-report.md"
+
+            echo "### Detailed Breakdown" >> "$OUTPUT_DIR/analysis-report.md"
             echo '```json' >> "$OUTPUT_DIR/analysis-report.md"
-            jq '.results[] | {severity: .severity, rule_id: .rule_id, description: .description, filename: .location.filename}' "$OUTPUT_DIR/tfsec-results.json" | head -50 >> "$OUTPUT_DIR/analysis-report.md" 2>/dev/null || echo "Error parsing TFSec results" >> "$OUTPUT_DIR/analysis-report.md"
+            jq '.projects[0].breakdown.resources[] | {name: .name, monthlyCost: .monthlyCost, subresources: [.subresources[]? | {name: .name, monthlyCost: .monthlyCost}]}' "$OUTPUT_DIR/infracost-results.json" 2>/dev/null >> "$OUTPUT_DIR/analysis-report.md" || echo "Error parsing cost data" >> "$OUTPUT_DIR/analysis-report.md"
             echo '```' >> "$OUTPUT_DIR/analysis-report.md"
-        fi
 
-        HIGH_ISSUES=$((HIGH_ISSUES + $(jq '.results[] | select(.severity=="HIGH") | .severity' "$OUTPUT_DIR/tfsec-results.json" 2>/dev/null | wc -l || echo "0")))
-        MEDIUM_ISSUES=$((MEDIUM_ISSUES + $(jq '.results[] | select(.severity=="MEDIUM") | .severity' "$OUTPUT_DIR/tfsec-results.json" 2>/dev/null | wc -l || echo "0")))
-        LOW_ISSUES=$((LOW_ISSUES + $(jq '.results[] | select(.severity=="LOW") | .severity' "$OUTPUT_DIR/tfsec-results.json" 2>/dev/null | wc -l || echo "0")))
+            # Flag high cost items as medium priority for review
+            HIGH_COST_THRESHOLD=100
+            if [ "${MONTHLY_COST%.*}" -gt "$HIGH_COST_THRESHOLD" 2>/dev/null ]; then
+                MEDIUM_ISSUES=$((MEDIUM_ISSUES + 1))
+                echo "⚠️ High monthly cost detected (\$${MONTHLY_COST}) - review for optimization opportunities" >> "$OUTPUT_DIR/analysis-report.md"
+            fi
+        fi
+    else
+        echo "⚠️ INFRACOST_API_KEY not provided - skipping cost analysis" >> "$OUTPUT_DIR/analysis-report.md"
+        echo "Set INFRACOST_API_KEY environment variable to enable cost estimation" >> "$OUTPUT_DIR/analysis-report.md"
     fi
     echo "" >> "$OUTPUT_DIR/analysis-report.md"
 fi
@@ -243,14 +246,14 @@ echo "📊 Summary: $TOTAL_ISSUES total issues ($CRITICAL_ISSUES critical, $HIGH
 echo "📄 Full report: $OUTPUT_DIR/analysis-report.md"
 echo ""
 
-# Set exit code based on findings
+# Set exit code based on findings (more lenient for best practices analyzer)
 if [ $CRITICAL_ISSUES -gt 0 ]; then
-    echo "❌ Exiting with code 2 due to critical issues"
+    echo "❌ Critical issues found - immediate attention required"
     exit 2
-elif [ $HIGH_ISSUES -gt 0 ]; then
-    echo "⚠️ Exiting with code 1 due to high priority issues"
+elif [ $HIGH_ISSUES -gt 3 ]; then
+    echo "⚠️ Multiple high priority recommendations - consider addressing before deployment"
     exit 1
 else
-    echo "✅ No critical or high priority issues found"
+    echo "✅ Analysis completed successfully"
     exit 0
 fi
